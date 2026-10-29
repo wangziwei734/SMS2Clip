@@ -4,6 +4,8 @@
 
 [English README](README.md)
 
+> **致谢与二次开发说明：** 本项目基于 [ntfy](https://github.com/binwiederhier/ntfy) 进行二次开发，并使用在 **谢週五** 原创并公开分享的 iPhone 快捷指令基础上适配的版本。详见 [CREDITS.md](CREDITS.md)。
+
 这是一个 Windows 桌面小工具：iPhone 通过“快捷指令”把短信转发到 ntfy，Windows 端接收后先复制完整短信，再提取 4 位或 6 位验证码并复制。当前剪贴板是验证码，按 `Win+V` 时上一条是完整短信。
 
 ![Ntfy Clipboard 中文界面](docs/screenshot-zh.png)
@@ -43,7 +45,7 @@ https://www.icloud.com/shortcuts/2e72a660dec84fd9b8c7abd92d42043f
 5. 完成添加后，在 **快捷指令 → 自动化** 会出现一条 **我收到包含“【”的信息时** 的自动化。它默认是关闭的，需要手动打开右侧开关后才能使用；
 6. 如果只想处理验证码短信，可以把自动化条件改成 `验证码` 或 `校验码`。
 
-这个捷径会以 JSON 方式向 ntfy 发布消息，基于谢週五公开的 ntfy 推送通知捷径。如果重复导入，会出现两条自动化，删除多余的一条即可。
+这个捷径会以 JSON 方式向 ntfy 发布消息，是在 **谢週五** 原创并公开分享的 ntfy 推送通知捷径基础上，为服务器/topic 配置和验证码流程二次开发的版本。详见 [CREDITS.md](CREDITS.md)。如果重复导入，会出现两条自动化，删除多余的一条即可。
 
 ## 快速开始
 
@@ -246,6 +248,13 @@ python -m ntfy_clipboard --config .\config.json --service
 - 日志只记录消息 ID 和是否找到验证码，不记录短信正文。
 - Windows 剪贴板历史可能同步到云端，如不需要请关闭跨设备同步。
 
+## 致谢与二次开发说明
+
+- [ntfy](https://github.com/binwiederhier/ntfy)：本项目基于 ntfy 开源的发布/订阅能力进行独立二次开发，不是 ntfy 官方客户端，与 ntfy 项目及其维护者无隶属或背书关系。
+- **谢週五**：本项目使用的 iPhone 快捷指令，是在谢週五原创并公开分享的 ntfy 推送通知捷径基础上二次开发而成，并针对本项目的服务器/topic 配置与验证码使用流程进行了适配。
+
+完整说明见 [CREDITS.md](CREDITS.md)。如署名或来源描述有误、遗漏，请提交 Issue，我们会及时更正。
+
 ## 项目结构
 
 ```text
@@ -260,6 +269,7 @@ ntfy_clipboard/
   service.py        后台重连循环
   state.py          最近消息 ID 持久化
   startup.py        Windows 开机自启注册表
+  notifications.py  Windows 通知和操作按钮
   runtime.py        子进程和 PID 辅助
 tests/              单元测试与 GUI 冒烟测试
 assets/             应用图标和托盘图标

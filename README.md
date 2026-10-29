@@ -4,6 +4,8 @@
 
 [中文说明](README.zh-CN.md)
 
+> **Attribution:** This is an unofficial secondary development built on [ntfy](https://github.com/binwiederhier/ntfy). It also uses an iPhone Shortcut adapted from the original created and shared by **谢週五**. See [Credits and attribution](CREDITS.md).
+
 Ntfy Clipboard is a small Windows desktop app that receives SMS forwarded from an iPhone through [ntfy](https://ntfy.sh/) and puts the verification code into the Windows clipboard.
 
 The clipboard sequence is intentional:
@@ -51,7 +53,7 @@ Import steps:
 5. Finish adding the shortcut. A new automation named **When I receive a message containing “【”** appears under **Shortcuts → Automation**. It is **off by default**, so turn on its switch manually to enable it.
 6. If you only want verification-code SMS, edit the automation condition to `验证码` or `校验码`.
 
-The shortcut posts JSON to ntfy. It is based on the public ntfy notification shortcut by **谢週五**. If you import it twice, delete the duplicate automation.
+The Shortcut posts JSON to ntfy. It is a project-specific adaptation of the public ntfy notification Shortcut originally created by **谢週五**; see [Credits and attribution](CREDITS.md). If you import it twice, delete the duplicate automation.
 
 ## Quick start
 
@@ -224,7 +226,7 @@ Requirements:
 
 - Windows 10/11
 - Python 3.10+
-- `pystray` and Pillow for the tray icon
+- `pystray`, Pillow, qrcode, and windows-toasts for the tray, QR code, and notifications
 - PyInstaller for packaging
 
 Install dependencies:
@@ -268,7 +270,7 @@ ruff check ntfy_clipboard tests
 ruff format --check ntfy_clipboard tests
 ```
 
-The test suite covers extraction rules, clipboard ordering, ntfy parsing, publishing, state persistence, service lifecycle, i18n, and GUI smoke behavior.
+The test suite covers extraction rules, clipboard ordering, ntfy parsing, publishing, state persistence, service lifecycle, toast action callbacks, i18n, and GUI smoke behavior.
 
 ## CLI mode
 
@@ -287,6 +289,13 @@ python -m ntfy_clipboard --config .\config.json --service
 - The log records only message IDs and whether a code was found; it does not log SMS content.
 - Clipboard history may be synchronized by Windows. Disable cross-device sync if you do not want codes on other devices.
 
+## Credits and attribution
+
+- [ntfy](https://github.com/binwiederhier/ntfy): This project is an unofficial secondary development built on ntfy's open-source publish/subscribe capabilities. It is not affiliated with or endorsed by the ntfy project or its maintainers.
+- **谢週五**: The bundled iPhone Shortcut is adapted and further developed from a public ntfy notification Shortcut originally created by 谢週五. The adapted version is tailored to this project's server/topic configuration and verification-code workflow.
+
+Full attribution: [CREDITS.md](CREDITS.md). If any attribution is inaccurate or incomplete, please open an issue so it can be corrected.
+
 ## Project layout
 
 ```text
@@ -301,6 +310,7 @@ ntfy_clipboard/
   service.py        Background reconnect loop
   state.py          Last message ID persistence
   startup.py        Windows login startup registry
+  notifications.py  Windows toast notifications and action buttons
   runtime.py        Child process and PID helpers
 tests/              Unit and GUI smoke tests
 assets/             App icon and tray image
