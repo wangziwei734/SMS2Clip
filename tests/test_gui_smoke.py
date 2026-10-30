@@ -1,4 +1,4 @@
-import shutil
+import json
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -9,11 +9,27 @@ from SMS2Clip.gui import SMS2ClipApp
 from SMS2Clip.history import HistoryStore
 
 
+def write_test_config(path: Path) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "server": "https://ntfy.sh",
+                "topic": "test-topic",
+                "state_file": "state.json",
+                "log_file": "logs/test.log",
+                "language": "zh-CN",
+                "auto_copy_code": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 class GuiSmokeTests(unittest.TestCase):
     def test_app_constructs_recognizes_text_and_switches_language(self):
         with tempfile.TemporaryDirectory() as directory:
             config_path = Path(directory) / "config.json"
-            shutil.copyfile("config.json", config_path)
+            write_test_config(config_path)
             app = SMS2ClipApp(config_path)
             try:
                 app.withdraw()
@@ -67,7 +83,7 @@ class GuiSmokeTests(unittest.TestCase):
     def test_service_mode_exit_leaves_background_listener_running(self):
         with tempfile.TemporaryDirectory() as directory:
             config_path = Path(directory) / "config.json"
-            shutil.copyfile("config.json", config_path)
+            write_test_config(config_path)
             app = SMS2ClipApp(config_path)
             app.withdraw()
             app.startup_mode = "service"
@@ -120,7 +136,7 @@ class GuiSmokeTests(unittest.TestCase):
     def test_auto_copy_change_restarts_a_running_listener(self):
         with tempfile.TemporaryDirectory() as directory:
             config_path = Path(directory) / "config.json"
-            shutil.copyfile("config.json", config_path)
+            write_test_config(config_path)
             app = SMS2ClipApp(config_path)
             app.withdraw()
             try:
@@ -142,7 +158,7 @@ class GuiSmokeTests(unittest.TestCase):
     def test_save_connection_settings_restarts_running_listener(self):
         with tempfile.TemporaryDirectory() as directory:
             config_path = Path(directory) / "config.json"
-            shutil.copyfile("config.json", config_path)
+            write_test_config(config_path)
             app = SMS2ClipApp(config_path)
             app.withdraw()
             try:
@@ -164,7 +180,7 @@ class GuiSmokeTests(unittest.TestCase):
     def test_history_tab_shows_full_message_and_copies_detected_code(self):
         with tempfile.TemporaryDirectory() as directory:
             config_path = Path(directory) / "config.json"
-            shutil.copyfile("config.json", config_path)
+            write_test_config(config_path)
             store = HistoryStore(Path(directory) / "history.json")
             store.add("通知\n您的快递已到达", None, "plain", "2026-10-30 10:00:00")
             store.add("短信\n验证码为 482913", "482913", "code", "2026-10-30 10:01:00")
@@ -201,7 +217,7 @@ class GuiSmokeTests(unittest.TestCase):
     def test_silent_mode_starts_service_then_closes_current_manager(self):
         with tempfile.TemporaryDirectory() as directory:
             config_path = Path(directory) / "config.json"
-            shutil.copyfile("config.json", config_path)
+            write_test_config(config_path)
             app = SMS2ClipApp(config_path)
             app.withdraw()
             try:
@@ -225,7 +241,7 @@ class GuiSmokeTests(unittest.TestCase):
     def test_cancel_silent_mode_confirmation_keeps_manager_open(self):
         with tempfile.TemporaryDirectory() as directory:
             config_path = Path(directory) / "config.json"
-            shutil.copyfile("config.json", config_path)
+            write_test_config(config_path)
             app = SMS2ClipApp(config_path)
             app.withdraw()
             previous_mode = "manager"
