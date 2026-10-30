@@ -40,7 +40,7 @@ jobs:
         run: .\build.ps1
 
       - name: Upload packaged executable
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: SMS2Clip-windows-x64
           path: SMS2Clip.exe
