@@ -7,8 +7,9 @@
   "since": "",
   "clipboard_gap_ms": 350,
   "state_file": "state.json",
-  "log_file": "logs/ntfy-clipboard.log",
+  "log_file": "logs/sms2clip.log",
   "reconnect_min_seconds": 1,
   "reconnect_max_seconds": 60,
-  "language": "zh-CN"
+  "language": "zh-CN",
+  "auto_copy_code": true
 }

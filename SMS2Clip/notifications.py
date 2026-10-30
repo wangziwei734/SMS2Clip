@@ -4,29 +4,89 @@ from __future__ import annotations
 
 import ctypes
 import logging
+import shutil
 import sys
-import threading
+from pathlib import Path
 from typing import Callable
 
 from .clipboard import set_clipboard_text
 from .i18n import normalize_language, tr
+from .paths import app_data_dir, resource_path, start_menu_shortcut_path
 
 try:
     from windows_toasts import (
         InteractableWindowsToaster,
         Toast,
         ToastButton,
-        ToastDuration,
     )
 except ImportError:  # pragma: no cover - optional on non-Windows builds
     InteractableWindowsToaster = None
     Toast = None
     ToastButton = None
-    ToastDuration = None
 
 
-APP_DISPLAY_NAME = "Ntfy Clipboard"
-TOAST_GROUP = "ntfy-clipboard"
+APP_DISPLAY_NAME = "SMS2Clip"
+APP_AUMID = "SMS2Clip.Desktop"
+TOAST_GROUP = "sms2clip"
+MB_ICONINFORMATION = 0x00000040
+MB_SETFOREGROUND = 0x00010000
+
+
+def _register_start_menu_shortcut() -> None:
+    if not getattr(sys, "frozen", False):
+        return
+
+    import gc
+
+    import win32com.client
+    from win32com.propsys import propsys, pscon
+
+    shortcut_path = start_menu_shortcut_path()
+    shortcut_path.parent.mkdir(parents=True, exist_ok=True)
+    executable = Path(sys.executable).resolve()
+    shell = win32com.client.Dispatch("WScript.Shell")
+    shortcut = shell.CreateShortcut(str(shortcut_path))
+    shortcut.TargetPath = str(executable)
+    shortcut.WorkingDirectory = str(executable.parent)
+    shortcut.IconLocation = str(executable)
+    shortcut.Description = "SMS2Clip - iPhone SMS to Windows clipboard"
+    shortcut.Save()
+    shortcut = None
+    shell = None
+    gc.collect()
+
+    store = propsys.SHGetPropertyStoreFromParsingName(
+        str(shortcut_path), None, 2, propsys.IID_IPropertyStore
+    )
+    store.SetValue(
+        pscon.PKEY_AppUserModel_ID,
+        propsys.PROPVARIANTType(APP_AUMID),
+    )
+    store.Commit()
+    store = None
+    gc.collect()
+
+
+def register_toast_identity() -> None:
+    import winreg
+
+    icon_path: Path | None = None
+    try:
+        source = resource_path("assets/sms2clip.ico")
+        if source.exists():
+            destination = app_data_dir() / "sms2clip.ico"
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
+            icon_path = destination.resolve()
+    except OSError:
+        icon_path = None
+
+    key_path = f"SOFTWARE\\Classes\\AppUserModelId\\{APP_AUMID}"
+    with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, key_path) as key:
+        winreg.SetValueEx(key, "DisplayName", 0, winreg.REG_SZ, APP_DISPLAY_NAME)
+        if icon_path is not None:
+            winreg.SetValueEx(key, "IconUri", 0, winreg.REG_SZ, str(icon_path))
+    _register_start_menu_shortcut()
 
 
 class ToastNotifier:
@@ -39,17 +99,12 @@ class ToastNotifier:
         clipboard_setter: Callable[[str], None] = set_clipboard_text,
         message_shower: Callable[[str, str], None] | None = None,
         logger: logging.Logger | None = None,
-        sms_delay_seconds: float = 8.0,
-        scheduler: Callable[[float, Callable[[], None]], None] | None = None,
     ) -> None:
         self.language = normalize_language(language)
         self.logger = logger or logging.getLogger(__name__)
         self._clipboard_setter = clipboard_setter
         self._message_shower = message_shower or self._show_message_box
         self._active_toasts: list[object] = []
-        self._timers: list[threading.Timer] = []
-        self._sms_delay_seconds = sms_delay_seconds
-        self._scheduler = scheduler or self._schedule_timer
         self._toaster = toaster
         if (
             self._toaster is None
@@ -57,26 +112,26 @@ class ToastNotifier:
             and InteractableWindowsToaster
         ):
             try:
-                self._toaster = InteractableWindowsToaster(APP_DISPLAY_NAME)
+                register_toast_identity()
+                self._toaster = InteractableWindowsToaster(APP_DISPLAY_NAME, APP_AUMID)
             except Exception:
                 self.logger.exception(
-                    "Could not initialize Windows toast notifications"
+                    "Could not initialize the SMS2Clip toast identity"
                 )
+                try:
+                    self._toaster = InteractableWindowsToaster(APP_DISPLAY_NAME)
+                except Exception:
+                    self.logger.exception(
+                        "Could not initialize Windows toast notifications"
+                    )
 
     def _t(self, key: str, **values: object) -> str:
         return tr(self.language, key, **values)
 
     def notify_message(self, full_text: str, code: str | None) -> None:
-        """Show the SMS toast and, if a code exists, the copied-code toast."""
+        """Show the full SMS toast and a copy-code action when available."""
 
-        if code:
-            self._show_copied_toast(code, full_text)
-            self._scheduler(
-                self._sms_delay_seconds,
-                lambda: self._show_sms_toast(full_text, code),
-            )
-        else:
-            self._show_sms_toast(full_text, None)
+        self._show_sms_toast(full_text, code)
 
     def _show_sms_toast(self, full_text: str, code: str | None) -> None:
         if self._toaster is None or Toast is None:
@@ -92,29 +147,10 @@ class ToastNotifier:
         toast.on_activated = lambda args: self._on_sms_activated(args, code, full_text)
         self._show(toast)
 
-    def _show_copied_toast(self, code: str, full_text: str) -> None:
-        if self._toaster is None or Toast is None:
-            return
-        actions = []
-        if ToastButton is not None:
-            actions.append(ToastButton(self._t("notify.view_full"), "view_full"))
-        toast = Toast(
-            [self._t("notify.copied_title", code=code), self._t("notify.copied_body")],
-            duration=ToastDuration.Short,
-            group=TOAST_GROUP,
-            actions=actions,
-        )
-        toast.on_activated = lambda args: self._on_view_activated(args, full_text)
-        self._show(toast)
-
     def _on_sms_activated(self, args, code: str | None, full_text: str) -> None:
         if code and getattr(args, "arguments", None) == "copy_code":
             self._clipboard_setter(code)
-            self._show_copied_toast(code, full_text)
             return
-        self._show_full_message(full_text)
-
-    def _on_view_activated(self, args, full_text: str) -> None:
         self._show_full_message(full_text)
 
     def _show_full_message(self, full_text: str) -> None:
@@ -129,16 +165,7 @@ class ToastNotifier:
         except Exception:
             self.logger.exception("Could not show Windows toast notification")
 
-    def _schedule_timer(self, delay: float, callback: Callable[[], None]) -> None:
-        timer = threading.Timer(delay, callback)
-        timer.daemon = True
-        timer.start()
-        self._timers.append(timer)
-
     def close(self) -> None:
-        for timer in self._timers:
-            timer.cancel()
-        self._timers.clear()
         if self._toaster is not None and hasattr(self._toaster, "clear_toasts"):
             try:
                 self._toaster.clear_toasts()
@@ -149,6 +176,11 @@ class ToastNotifier:
         if sys.platform != "win32":
             return
         try:
-            ctypes.windll.user32.MessageBoxW(0, text, title, 0x00000040)
+            ctypes.windll.user32.MessageBoxW(
+                0,
+                text,
+                title,
+                MB_ICONINFORMATION | MB_SETFOREGROUND,
+            )
         except Exception:
             self.logger.exception("Could not show full SMS message box")

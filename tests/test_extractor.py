@@ -1,6 +1,6 @@
 import unittest
 
-from ntfy_clipboard.extractor import extract_verification_code
+from SMS2Clip.extractor import extract_verification_code
 
 
 class VerificationCodeExtractorTests(unittest.TestCase):

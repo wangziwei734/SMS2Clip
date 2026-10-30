@@ -1,10 +1,11 @@
-"""Command-line entry point for ntfy-clipboard."""
+"""Command-line entry point for sms2clip."""
 
 from __future__ import annotations
 
 import argparse
 import json
 import logging
+import os
 import secrets
 import sys
 from logging.handlers import RotatingFileHandler
@@ -12,16 +13,20 @@ from pathlib import Path
 
 from .config import Config
 from .extractor import extract_verification_code
+from .paths import default_config_path
+from .runtime import pid_file_path, process_is_running, read_pid
 from .ntfy_client import publish_message
 from .service import run_service
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="ntfy-clipboard",
+        prog="sms2clip",
         description="Copy SMS messages received through ntfy into the Windows clipboard.",
     )
-    parser.add_argument("--config", default="config.json", help="Path to config.json")
+    parser.add_argument(
+        "--config", default=str(default_config_path()), help="Path to config.json"
+    )
     parser.add_argument(
         "--extract", metavar="TEXT", help="Test code extraction and exit"
     )
@@ -51,10 +56,11 @@ def _create_config(path: Path, force: bool) -> None:
         "since": "",
         "clipboard_gap_ms": 350,
         "state_file": "state.json",
-        "log_file": "logs/ntfy-clipboard.log",
+        "log_file": "logs/sms2clip.log",
         "reconnect_min_seconds": 1,
         "reconnect_max_seconds": 60,
         "language": "zh-CN",
+        "auto_copy_code": True,
     }
     path.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
@@ -66,7 +72,7 @@ def _create_config(path: Path, force: bool) -> None:
 
 def _configure_logging(config: Config) -> logging.Logger:
     config.log_file.parent.mkdir(parents=True, exist_ok=True)
-    logger = logging.getLogger("ntfy_clipboard")
+    logger = logging.getLogger("SMS2Clip")
     logger.setLevel(logging.INFO)
     logger.handlers.clear()
 
@@ -89,7 +95,7 @@ def main(argv: list[str] | None = None) -> int:
         print(code if code else "NOT_FOUND")
         return 0
 
-    config_path = Path(args.config)
+    config_path = Path(args.config).expanduser().resolve()
 
     if args.init:
         try:
@@ -127,10 +133,22 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     logger = _configure_logging(config)
+    pid_path = pid_file_path(config_path)
+    existing_pid = read_pid(pid_path)
+    owns_pid_file = not existing_pid or not process_is_running(existing_pid)
+    if owns_pid_file:
+        pid_path.write_text(str(os.getpid()), encoding="ascii")
+
     try:
         run_service(config, logger)
     except KeyboardInterrupt:
         return 0
+    finally:
+        if owns_pid_file and read_pid(pid_path) == os.getpid():
+            try:
+                pid_path.unlink()
+            except OSError:
+                pass
     return 0
 
 

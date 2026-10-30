@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from ntfy_clipboard.config import Config
+from SMS2Clip.config import Config
 
 
 class ConfigTests(unittest.TestCase):
@@ -29,13 +29,20 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(config.topic, "my-topic")
             self.assertEqual(config.server, "https://ntfy.sh")
             self.assertEqual(config.clipboard_gap_ms, 350)
+            self.assertTrue(config.auto_copy_code)
             self.assertEqual(
                 config.state_file, (Path(directory) / "state.json").resolve()
             )
             self.assertEqual(
-                config.log_file,
-                (Path(directory) / "logs" / "ntfy-clipboard.log").resolve(),
+                config.log_file, (Path(directory) / "logs" / "sms2clip.log").resolve()
             )
+
+    def test_loads_disabled_auto_copy_setting(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self._write_config(directory, {"auto_copy_code": False})
+            config = Config.load(path)
+
+            self.assertFalse(config.auto_copy_code)
 
     def test_defaults_to_live_subscription_without_replaying_cache(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -9,6 +9,7 @@ from typing import Callable
 from .app import ClipboardApp
 from .clipboard import ClipboardWriter
 from .config import Config
+from .history import HistoryStore
 from .notifications import ToastNotifier
 from .ntfy_client import NtfySubscriber
 from .state import StateStore
@@ -21,6 +22,7 @@ def run_service(
     notifier_factory: Callable[[], ToastNotifier] | None = None,
 ) -> None:
     state = StateStore(config.state_file).load()
+    history = HistoryStore(config.state_file.parent / "history.json")
     writer = ClipboardWriter(gap_seconds=config.clipboard_gap_ms / 1000)
     if notifier_factory is None:
 
@@ -33,6 +35,8 @@ def run_service(
         state=state,
         logger=logger,
         notifier=notifier,
+        auto_copy_code=config.auto_copy_code,
+        history=history,
     )
 
     if subscriber_factory is None:
@@ -48,7 +52,7 @@ def run_service(
             )
 
     backoff = config.reconnect_min_seconds
-    logger.info("Starting ntfy clipboard bridge for %s/%s", config.server, config.topic)
+    logger.info("Starting SMS2Clip bridge for %s/%s", config.server, config.topic)
     try:
         while True:
             since = state.last_id or config.since
@@ -58,7 +62,7 @@ def run_service(
                     app.handle_message(message)
                 backoff = config.reconnect_min_seconds
             except KeyboardInterrupt:
-                logger.info("Stopping ntfy clipboard bridge")
+                logger.info("Stopping SMS2Clip bridge")
                 return
             except Exception:
                 logger.exception(

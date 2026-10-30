@@ -1,4 +1,4 @@
-"""Tkinter desktop application for the ntfy clipboard bridge."""
+"""Tkinter desktop application for the SMS2Clip bridge."""
 
 from __future__ import annotations
 
@@ -16,10 +16,14 @@ from tkinter import messagebox, ttk
 
 from .config import Config
 from .extractor import extract_verification_code
+from .history import HistoryStore
 from .i18n import LANG_EN, LANG_ZH, normalize_language, tr
 from .ntfy_client import publish_message
+from .paths import default_config_path, is_frozen, resource_path
+from .single_instance import ManagerInstance
 from .runtime import (
     build_service_command,
+    build_service_environment,
     pid_file_path,
     process_is_running,
     read_pid,
@@ -29,7 +33,7 @@ from .startup import (
     build_startup_command,
     disable_startup,
     enable_startup,
-    is_startup_enabled,
+    get_startup_mode,
 )
 
 try:
@@ -45,7 +49,7 @@ try:
 except ImportError:  # pragma: no cover - the packaged build includes qrcode
     qrcode = None
 
-APP_NAME = "Ntfy Clipboard"
+APP_NAME = "SMS2Clip"
 ICLOUD_SHORTCUT_URL = (
     "https://www.icloud.com/shortcuts/2e72a660dec84fd9b8c7abd92d42043f"
 )
@@ -67,25 +71,6 @@ BORDER = "#E4E7EC"
 SOFT = "#F9FAFB"
 
 
-def is_frozen() -> bool:
-    return bool(getattr(sys, "frozen", False))
-
-
-def app_dir() -> Path:
-    if is_frozen():
-        return Path(sys.executable).resolve().parent
-    return Path(__file__).resolve().parent.parent
-
-
-def default_config_path() -> Path:
-    return app_dir() / "config.json"
-
-
-def resource_path(relative: str) -> Path:
-    base = Path(getattr(sys, "_MEIPASS", app_dir()))
-    return base / relative
-
-
 def gui_executable() -> Path:
     if is_frozen():
         return Path(sys.executable).resolve()
@@ -105,19 +90,25 @@ def _set_dpi_awareness() -> None:
             pass
 
 
-class NtfyClipboardApp(tk.Tk):
+class SMS2ClipApp(tk.Tk):
     def __init__(self, config_path: Path, minimized: bool = False) -> None:
         super().__init__()
         self.config_path = config_path.resolve()
         self.minimized = minimized
         self.settings: Config | None = None
         self.language = LANG_ZH
+        self.auto_copy_code = True
+        self.startup_mode = get_startup_mode()
         self.tray_icon = None
         self.child_process: subprocess.Popen | None = None
         self._status_kind = "stopped"
         self._status_job = None
         self._log_job = None
+        self._history_job = None
         self._log_signature: tuple[int, int] | None = None
+        self._history_signature: tuple[int, int] | None = None
+        self._history_records: list[dict] = []
+        self.history_store = HistoryStore(self.config_path.parent / "history.json")
         self._advanced_username = ""
         self._advanced_password = ""
         self._advanced_since = ""
@@ -128,7 +119,7 @@ class NtfyClipboardApp(tk.Tk):
         self.minsize(900, 700)
         self.configure(bg=BG)
         self.option_add("*Font", "微软雅黑 10")
-        icon = resource_path("assets/ntfy-clipboard.ico")
+        icon = resource_path("assets/sms2clip.ico")
         if icon.exists():
             try:
                 self.iconbitmap(str(icon))
@@ -139,19 +130,26 @@ class NtfyClipboardApp(tk.Tk):
         self.topic_var = tk.StringVar()
         self.token_var = tk.StringVar()
         self.publish_url_var = tk.StringVar()
-        self.autostart_var = tk.BooleanVar(value=False)
+        self.startup_mode_var = tk.StringVar()
+        self.startup_hint_var = tk.StringVar()
+        self.auto_copy_code_var = tk.BooleanVar(value=True)
         self.status_title_var = tk.StringVar(value=self._t("status.stopped"))
         self.status_detail_var = tk.StringVar(value=self._t("status.stopped_detail"))
         self.test_input: tk.Text | None = None
         self.test_result_var = tk.StringVar(value=self._t("test.no_result"))
         self.log_text: tk.Text | None = None
+        self.history_tree: ttk.Treeview | None = None
+        self.history_detail: tk.Text | None = None
+        self.history_copy_button: ttk.Button | None = None
+        self.history_count_var = tk.StringVar()
+        self.history_status_var = tk.StringVar()
 
         self._build_styles()
         self._load_config()
         self._build_ui()
         self._fit_window()
         self._update_publish_url()
-        self.autostart_var.set(is_startup_enabled())
+        self._refresh_history(force=True)
         self._start_tray()
 
         self.server_var.trace_add("write", lambda *_: self._update_publish_url())
@@ -160,9 +158,10 @@ class NtfyClipboardApp(tk.Tk):
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.after(500, self._poll_status)
         self.after(1000, self._poll_log)
+        self.after(1200, self._poll_history)
+        self.after(600, self._auto_start_if_needed)
         if minimized:
             self.after(250, self._hide_to_tray)
-            self.after(600, self._auto_start_if_needed)
 
     def _fit_window(self) -> None:
         self.update_idletasks()
@@ -257,6 +256,21 @@ class NtfyClipboardApp(tk.Tk):
             foreground=[("readonly", MUTED)],
         )
         style.configure(
+            "Field.TCombobox",
+            fieldbackground=SOFT,
+            foreground=NAVY,
+            background=CARD,
+            bordercolor=BORDER,
+            lightcolor=BORDER,
+            darkcolor=BORDER,
+            padding=7,
+        )
+        style.map(
+            "Field.TCombobox",
+            fieldbackground=[("readonly", SOFT)],
+            foreground=[("readonly", NAVY)],
+        )
+        style.configure(
             "TCheckbutton",
             background=CARD,
             foreground=NAVY,
@@ -275,6 +289,26 @@ class NtfyClipboardApp(tk.Tk):
             "TNotebook.Tab",
             background=[("selected", CARD), ("active", "#EAECF0")],
             foreground=[("selected", TEAL)],
+        )
+        style.configure(
+            "History.Treeview",
+            background=CARD,
+            fieldbackground=CARD,
+            foreground=NAVY,
+            borderwidth=0,
+            rowheight=30,
+            font=("微软雅黑", 9),
+        )
+        style.configure(
+            "History.Treeview.Heading",
+            background=SOFT,
+            foreground=NAVY,
+            font=("微软雅黑", 9, "bold"),
+        )
+        style.map(
+            "History.Treeview",
+            background=[("selected", TEAL)],
+            foreground=[("selected", "#FFFFFF")],
         )
 
     def _card(self, parent: tk.Misc) -> tk.Frame:
@@ -339,12 +373,15 @@ class NtfyClipboardApp(tk.Tk):
 
     def _toggle_language(self) -> None:
         self.language = LANG_EN if self.language == LANG_ZH else LANG_ZH
+        saved = True
         if self.config_path.exists():
             try:
                 self._save_settings()
             except Exception:
-                pass
+                saved = False
         self._rebuild_ui()
+        if saved:
+            self._restart_service_if_running()
 
     def _rebuild_ui(self) -> None:
         selected = 0
@@ -358,10 +395,11 @@ class NtfyClipboardApp(tk.Tk):
         self._build_ui()
         self._fit_window()
         self._update_publish_url()
-        self.autostart_var.set(is_startup_enabled())
         if hasattr(self, "notebook") and selected:
             self.notebook.select(selected)
         self._log_signature = None
+        self._history_signature = None
+        self._refresh_history(force=True)
         self._update_status()
         self._update_tray_menu()
 
@@ -392,13 +430,13 @@ class NtfyClipboardApp(tk.Tk):
     def _start_tray(self) -> None:
         if pystray is None or Image is None:
             return
-        icon_path = resource_path("assets/ntfy-clipboard.png")
+        icon_path = resource_path("assets/sms2clip.png")
         if not icon_path.exists():
             return
         try:
             image = Image.open(icon_path).convert("RGBA")
             self.tray_icon = pystray.Icon(
-                "ntfy-clipboard",
+                "sms2clip",
                 image,
                 self._t("tray.tooltip"),
                 self._build_tray_menu(),
@@ -431,7 +469,8 @@ class NtfyClipboardApp(tk.Tk):
             self.iconify()
 
     def _exit_app(self) -> None:
-        self._stop_service()
+        if self.startup_mode != "service":
+            self._stop_service()
         if self.tray_icon is not None:
             try:
                 self.tray_icon.stop()
@@ -509,12 +548,48 @@ class NtfyClipboardApp(tk.Tk):
         self.notebook = notebook
         connection_tab = tk.Frame(notebook, bg=BG)
         tools_tab = tk.Frame(notebook, bg=BG)
+        history_tab = tk.Frame(notebook, bg=BG)
         notebook.add(connection_tab, text=f"  {self._t('tab.connection')}  ")
         notebook.add(tools_tab, text=f"  {self._t('tab.tools')}  ")
-        content = tk.Frame(connection_tab, bg=BG)
-        content.pack(fill="both", expand=True, padx=10, pady=10)
-        content.grid_columnconfigure(0, weight=3, uniform="main")
-        content.grid_columnconfigure(1, weight=2, uniform="main")
+        notebook.add(history_tab, text=f"  {self._t('tab.history')}  ")
+        content_viewport = tk.Frame(connection_tab, bg=BG)
+        content_viewport.pack(fill="both", expand=True)
+        content_viewport.grid_rowconfigure(0, weight=1)
+        content_viewport.grid_columnconfigure(0, weight=1)
+        self.connection_canvas = tk.Canvas(
+            content_viewport,
+            bg=BG,
+            bd=0,
+            highlightthickness=0,
+        )
+        self.connection_canvas.grid(row=0, column=0, sticky="nsew")
+        self.connection_scrollbar = ttk.Scrollbar(
+            content_viewport,
+            orient="vertical",
+            command=self.connection_canvas.yview,
+        )
+        self.connection_scrollbar.grid(row=0, column=1, sticky="ns", padx=(0, 4))
+        self.connection_scrollbar.grid_remove()
+        self.connection_canvas.configure(yscrollcommand=self.connection_scrollbar.set)
+
+        content = tk.Frame(self.connection_canvas, bg=BG)
+        content_window = self.connection_canvas.create_window(
+            (10, 10), window=content, anchor="nw"
+        )
+        content.bind(
+            "<Configure>",
+            lambda _event: self._update_connection_scrollbar(),
+        )
+
+        def resize_content(event) -> None:
+            self.connection_canvas.itemconfigure(
+                content_window, width=max(1, event.width - 20)
+            )
+            self._update_connection_scrollbar()
+
+        self.connection_canvas.bind("<Configure>", resize_content)
+        content.grid_columnconfigure(0, weight=1, uniform="main")
+        content.grid_columnconfigure(1, weight=1, uniform="main")
         content.grid_rowconfigure(0, weight=1)
 
         settings_card = self._card(content)
@@ -527,8 +602,30 @@ class NtfyClipboardApp(tk.Tk):
             self._t("settings.subtitle"),
         )
 
-        form = tk.Frame(settings_inner, bg=CARD)
-        form.pack(fill="x", pady=(6, 0))
+        self.settings_toggle_button = ttk.Button(
+            settings_inner,
+            text=self._t("settings.show"),
+            style="Secondary.TButton",
+            command=self._toggle_connection_settings,
+        )
+        self.settings_toggle_button.pack(anchor="w", pady=(14, 0))
+        self.settings_hidden_hint_label = tk.Label(
+            settings_inner,
+            text=self._t("settings.hidden_hint"),
+            bg="#F0FDF9",
+            fg="#0F766E",
+            font=("微软雅黑", 9),
+            justify="left",
+            anchor="w",
+            wraplength=420,
+            padx=10,
+            pady=8,
+        )
+        self.settings_hidden_hint_label.pack(fill="x", pady=(12, 0))
+
+        self.connection_settings_content = tk.Frame(settings_inner, bg=CARD)
+        form = tk.Frame(self.connection_settings_content, bg=CARD)
+        form.pack(fill="x", pady=(2, 0))
         form.grid_columnconfigure(0, weight=1)
         self._field(form, 0, self._t("field.server"), self.server_var)
 
@@ -582,7 +679,7 @@ class NtfyClipboardApp(tk.Tk):
         ).grid(row=0, column=1, padx=(8, 0))
 
         hint = tk.Label(
-            settings_inner,
+            self.connection_settings_content,
             text=self._t("hint.security"),
             bg="#F0FDF9",
             fg="#0F766E",
@@ -594,12 +691,21 @@ class NtfyClipboardApp(tk.Tk):
             pady=8,
         )
         hint.pack(fill="x", pady=(12, 0))
+        connection_actions = tk.Frame(self.connection_settings_content, bg=CARD)
+        connection_actions.pack(anchor="w", pady=(10, 0))
         ttk.Button(
-            settings_inner,
+            connection_actions,
+            text=self._t("button.save_connection"),
+            style="Primary.TButton",
+            command=self._save_connection_settings,
+        ).pack(side="left")
+        ttk.Button(
+            connection_actions,
             text=self._t("button.advanced"),
             style="Secondary.TButton",
             command=self._open_advanced,
-        ).pack(anchor="w", pady=(10, 0))
+        ).pack(side="left", padx=(8, 0))
+        self._bind_connection_mousewheel(self.connection_settings_content)
 
         actions_card = self._card(content)
         actions_card.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
@@ -633,9 +739,16 @@ class NtfyClipboardApp(tk.Tk):
             font=("微软雅黑", 9),
             anchor="w",
             justify="left",
-            wraplength=250,
+            wraplength=340,
         )
         self.status_detail_label.pack(fill="x", padx=16, pady=(0, 12))
+
+        ttk.Checkbutton(
+            actions_inner,
+            text=self._t("checkbox.auto_copy_code"),
+            variable=self.auto_copy_code_var,
+            command=self._on_auto_copy_change,
+        ).pack(anchor="w", pady=(14, 0))
 
         self.start_button = ttk.Button(
             actions_inner,
@@ -660,12 +773,37 @@ class NtfyClipboardApp(tk.Tk):
         ).pack(fill="x", pady=(6, 0))
 
         ttk.Separator(actions_inner, orient="horizontal").pack(fill="x", pady=14)
-        ttk.Checkbutton(
+        tk.Label(
             actions_inner,
-            text=self._t("checkbox.autostart"),
-            variable=self.autostart_var,
-            command=self._toggle_autostart,
-        ).pack(anchor="w")
+            text=self._t("label.startup_mode"),
+            bg=CARD,
+            fg=NAVY,
+            font=("微软雅黑", 9, "bold"),
+            anchor="w",
+        ).pack(fill="x", pady=(0, 4))
+        self.startup_mode_combo = ttk.Combobox(
+            actions_inner,
+            textvariable=self.startup_mode_var,
+            values=self._startup_mode_labels(),
+            state="readonly",
+            style="Field.TCombobox",
+        )
+        self.startup_mode_combo.pack(fill="x")
+        self.startup_mode_combo.bind(
+            "<<ComboboxSelected>>", self._on_startup_mode_change
+        )
+        self.startup_mode_var.set(self._startup_mode_label(self.startup_mode))
+        self.startup_hint_var.set(self._startup_hint(self.startup_mode))
+        tk.Label(
+            actions_inner,
+            textvariable=self.startup_hint_var,
+            bg=CARD,
+            fg=MUTED,
+            font=("微软雅黑", 8),
+            anchor="w",
+            justify="left",
+            wraplength=380,
+        ).pack(fill="x", pady=(4, 0))
         ttk.Button(
             actions_inner,
             text=self._t("button.open_log"),
@@ -763,6 +901,121 @@ class NtfyClipboardApp(tk.Tk):
         scrollbar.grid(row=0, column=1, sticky="ns")
         self.log_text.configure(yscrollcommand=scrollbar.set)
 
+        self._build_history_tab(history_tab)
+
+    def _build_history_tab(self, parent: tk.Misc) -> None:
+        content = tk.Frame(parent, bg=BG)
+        content.pack(fill="both", expand=True, padx=10, pady=10)
+        content.grid_columnconfigure(0, weight=3, uniform="history")
+        content.grid_columnconfigure(1, weight=5, uniform="history")
+        content.grid_rowconfigure(0, weight=1)
+
+        list_card = self._card(content)
+        list_card.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        list_inner = tk.Frame(list_card, bg=CARD)
+        list_inner.pack(fill="both", expand=True, padx=16, pady=14)
+        self._card_title(
+            list_inner,
+            self._t("history.title"),
+            self._t("history.subtitle"),
+        )
+
+        list_actions = tk.Frame(list_inner, bg=CARD)
+        list_actions.pack(fill="x", pady=(12, 8))
+        tk.Label(
+            list_actions,
+            textvariable=self.history_count_var,
+            bg=CARD,
+            fg=MUTED,
+            font=("微软雅黑", 9),
+            anchor="w",
+        ).pack(side="left")
+        ttk.Button(
+            list_actions,
+            text=self._t("button.clear_history"),
+            style="Secondary.TButton",
+            command=self._clear_history,
+        ).pack(side="right")
+
+        tree_frame = tk.Frame(list_inner, bg=CARD)
+        tree_frame.pack(fill="both", expand=True)
+        tree_frame.grid_rowconfigure(0, weight=1)
+        tree_frame.grid_columnconfigure(0, weight=1)
+        self.history_tree = ttk.Treeview(
+            tree_frame,
+            columns=("time", "message"),
+            show="headings",
+            style="History.Treeview",
+            selectmode="browse",
+        )
+        self.history_tree.heading("time", text=self._t("history.time"))
+        self.history_tree.heading("message", text=self._t("history.message"))
+        self.history_tree.column("time", width=150, minwidth=145, stretch=False)
+        self.history_tree.column("message", width=220, minwidth=120, stretch=True)
+        self.history_tree.grid(row=0, column=0, sticky="nsew")
+        history_scrollbar = ttk.Scrollbar(
+            tree_frame, orient="vertical", command=self.history_tree.yview
+        )
+        history_scrollbar.grid(row=0, column=1, sticky="ns")
+        self.history_tree.configure(yscrollcommand=history_scrollbar.set)
+        self.history_tree.bind("<<TreeviewSelect>>", self._on_history_select)
+
+        detail_card = self._card(content)
+        detail_card.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
+        detail_inner = tk.Frame(detail_card, bg=CARD)
+        detail_inner.pack(fill="both", expand=True, padx=16, pady=14)
+        self._card_title(
+            detail_inner,
+            self._t("history.detail_title"),
+            self._t("history.detail_subtitle"),
+        )
+
+        detail_frame = tk.Frame(detail_inner, bg=CARD)
+        detail_frame.pack(fill="both", expand=True, pady=(14, 10))
+        detail_frame.grid_rowconfigure(0, weight=1)
+        detail_frame.grid_columnconfigure(0, weight=1)
+        self.history_detail = tk.Text(
+            detail_frame,
+            width=40,
+            height=10,
+            bg=SOFT,
+            fg=NAVY,
+            relief="flat",
+            highlightthickness=1,
+            highlightbackground=BORDER,
+            highlightcolor=TEAL,
+            padx=12,
+            pady=10,
+            font=("微软雅黑", 10),
+            wrap="word",
+            state="disabled",
+        )
+        self.history_detail.grid(row=0, column=0, sticky="nsew")
+        detail_scrollbar = ttk.Scrollbar(
+            detail_frame, orient="vertical", command=self.history_detail.yview
+        )
+        detail_scrollbar.grid(row=0, column=1, sticky="ns")
+        self.history_detail.configure(yscrollcommand=detail_scrollbar.set)
+
+        footer = tk.Frame(detail_inner, bg=CARD)
+        footer.pack(fill="x")
+        tk.Label(
+            footer,
+            textvariable=self.history_status_var,
+            bg=CARD,
+            fg=MUTED,
+            font=("微软雅黑", 9),
+            anchor="w",
+        ).pack(side="left", fill="x", expand=True)
+        self.history_copy_button = ttk.Button(
+            footer,
+            text=self._t("history.copy_code"),
+            style="Primary.TButton",
+            state="disabled",
+            command=self._copy_history_code,
+        )
+        self.history_copy_button.pack(side="right")
+
     def _load_config(self) -> None:
         if not self.config_path.exists():
             self.topic_var.set(secrets.token_urlsafe(12))
@@ -771,6 +1024,8 @@ class NtfyClipboardApp(tk.Tk):
         try:
             self.settings = Config.load(self.config_path)
             self.language = normalize_language(self.settings.language)
+            self.auto_copy_code = self.settings.auto_copy_code
+            self.auto_copy_code_var.set(self.auto_copy_code)
         except Exception as exc:
             messagebox.showerror(
                 self._t("dialog.config_read_error"), f"{self.config_path}\n\n{exc}"
@@ -808,14 +1063,80 @@ class NtfyClipboardApp(tk.Tk):
             since=self._advanced_since,
             clipboard_gap_ms=gap,
             state_file=self.config_path.parent / "state.json",
-            log_file=self.config_path.parent / "logs" / "ntfy-clipboard.log",
+            log_file=self.config_path.parent / "logs" / "sms2clip.log",
             reconnect_min_seconds=1,
             reconnect_max_seconds=60,
             language=self.language,
+            auto_copy_code=self.auto_copy_code_var.get(),
         )
         config.save(self.config_path)
         self.settings = config
         return config
+
+    def _restart_service_if_running(self) -> bool:
+        if not self._service_pid():
+            return False
+        self.status_detail_var.set(self._t("status.listener_restarting"))
+        self._stop_service()
+        self.after(500, self._start_service)
+        return True
+
+    def _save_connection_settings(self) -> None:
+        try:
+            self._save_settings()
+        except Exception as exc:
+            messagebox.showerror(self._t("dialog.config_error"), str(exc))
+            return
+        if not self._restart_service_if_running():
+            self.status_detail_var.set(self._t("status.connection_saved"))
+
+    def _on_auto_copy_change(self) -> None:
+        self.auto_copy_code = bool(self.auto_copy_code_var.get())
+        if self.config_path.exists():
+            try:
+                self._save_settings()
+            except Exception as exc:
+                messagebox.showerror(self._t("dialog.config_error"), str(exc))
+
+        if not self._restart_service_if_running():
+            self.status_detail_var.set(self._t("status.auto_copy_updated"))
+
+    def _update_connection_scrollbar(self) -> None:
+        bbox = self.connection_canvas.bbox("all")
+        if bbox is None:
+            return
+        self.connection_canvas.configure(scrollregion=bbox)
+        content_height = bbox[3] - bbox[1]
+        if content_height > self.connection_canvas.winfo_height() + 1:
+            self.connection_scrollbar.grid()
+        else:
+            self.connection_scrollbar.grid_remove()
+
+    def _bind_connection_mousewheel(self, widget: tk.Misc) -> None:
+        widget.bind("<MouseWheel>", self._on_connection_mousewheel, add="+")
+        for child in widget.winfo_children():
+            self._bind_connection_mousewheel(child)
+
+    def _on_connection_mousewheel(self, event) -> str:
+        if not self.connection_settings_content.winfo_manager():
+            return "break"
+        direction = -1 if event.delta > 0 else 1
+        self.connection_canvas.yview_scroll(direction, "units")
+        return "break"
+
+    def _toggle_connection_settings(self) -> None:
+        if self.connection_settings_content.winfo_manager():
+            self.connection_settings_content.pack_forget()
+            self.settings_hidden_hint_label.pack(fill="x", pady=(12, 0))
+            self.settings_toggle_button.configure(text=self._t("settings.show"))
+        else:
+            self.settings_hidden_hint_label.pack_forget()
+            self.connection_settings_content.pack(
+                fill="both", expand=True, pady=(12, 0)
+            )
+            self.connection_canvas.yview_moveto(0)
+            self.settings_toggle_button.configure(text=self._t("settings.hide"))
+        self.after_idle(self._update_connection_scrollbar)
 
     def _update_publish_url(self) -> None:
         server = self.server_var.get().strip().rstrip("/")
@@ -955,8 +1276,140 @@ class NtfyClipboardApp(tk.Tk):
         self._update_status()
         self._status_job = self.after(1000, self._poll_status)
 
+    def _history_preview(self, text: str) -> str:
+        normalized = " ".join(text.split())
+        return f"{normalized[:80]}…" if len(normalized) > 80 else normalized
+
+    def _selected_history_record(self) -> dict | None:
+        if self.history_tree is None:
+            return None
+        selection = self.history_tree.selection()
+        if not selection:
+            return None
+        try:
+            index = int(selection[0])
+        except (TypeError, ValueError):
+            return None
+        if 0 <= index < len(self._history_records):
+            return self._history_records[index]
+        return None
+
+    def _refresh_history(self, force: bool = False) -> None:
+        if self.history_tree is None or self.history_detail is None:
+            return
+        try:
+            stat = self.history_store.path.stat()
+            signature = (stat.st_mtime_ns, stat.st_size)
+        except OSError:
+            signature = None
+        if not force and signature == self._history_signature:
+            return
+        self._history_signature = signature
+
+        selected = self._selected_history_record()
+        selected_key = None
+        if selected is not None:
+            selected_key = (
+                selected.get("id", ""),
+                selected.get("received_at", ""),
+                selected.get("text", ""),
+            )
+
+        self._history_records = self.history_store.load()
+        self.history_tree.delete(*self.history_tree.get_children())
+        target_iid = None
+        for index, record in enumerate(self._history_records):
+            code = str(record.get("code") or "")
+            prefix = f"[{code}] " if code else ""
+            preview = prefix + self._history_preview(str(record.get("text", "")))
+            iid = str(index)
+            self.history_tree.insert(
+                "",
+                "end",
+                iid=iid,
+                values=(str(record.get("received_at", ""))[:16], preview),
+            )
+            record_key = (
+                record.get("id", ""),
+                record.get("received_at", ""),
+                record.get("text", ""),
+            )
+            if selected_key is not None and record_key == selected_key:
+                target_iid = iid
+
+        self.history_count_var.set(
+            self._t("history.count", count=len(self._history_records))
+        )
+        if self._history_records:
+            if target_iid is None:
+                target_iid = "0"
+            self.history_tree.selection_set(target_iid)
+            self.history_tree.focus(target_iid)
+            self.history_tree.see(target_iid)
+            self._on_history_select()
+        else:
+            self._set_history_detail(self._t("history.empty"))
+            self.history_status_var.set("")
+            if self.history_copy_button is not None:
+                self.history_copy_button.configure(state="disabled")
+
+    def _set_history_detail(self, text: str) -> None:
+        if self.history_detail is None:
+            return
+        self.history_detail.configure(state="normal")
+        self.history_detail.delete("1.0", "end")
+        self.history_detail.insert("1.0", text)
+        self.history_detail.configure(state="disabled")
+
+    def _on_history_select(self, event=None) -> None:
+        record = self._selected_history_record()
+        if record is None:
+            return
+        self._set_history_detail(str(record.get("text", "")))
+        code = str(record.get("code") or "")
+        if code:
+            self.history_status_var.set(self._t("history.code_found", code=code))
+            if self.history_copy_button is not None:
+                self.history_copy_button.configure(state="normal")
+        else:
+            self.history_status_var.set(self._t("history.no_code"))
+            if self.history_copy_button is not None:
+                self.history_copy_button.configure(state="disabled")
+
+    def _copy_history_code(self) -> None:
+        record = self._selected_history_record()
+        if record is None:
+            return
+        code = str(record.get("code") or "")
+        if not code:
+            return
+        self.clipboard_clear()
+        self.clipboard_append(code)
+        self.update_idletasks()
+        self.history_status_var.set(self._t("history.copied", code=code))
+
+    def _clear_history(self) -> None:
+        if not self._history_records:
+            return
+        if not messagebox.askyesno(
+            self._t("dialog.clear_history_title"),
+            self._t("dialog.clear_history_body"),
+        ):
+            return
+        try:
+            self.history_store.clear()
+        except OSError as exc:
+            messagebox.showerror(self._t("dialog.config_error"), str(exc))
+            return
+        self._history_signature = None
+        self._refresh_history(force=True)
+
+    def _poll_history(self) -> None:
+        self._refresh_history()
+        self._history_job = self.after(1500, self._poll_history)
+
     def _poll_log(self) -> None:
-        log_path = self.config_path.parent / "logs" / "ntfy-clipboard.log"
+        log_path = self.config_path.parent / "logs" / "sms2clip.log"
         if log_path.exists() and self.log_text is not None:
             try:
                 stat = log_path.stat()
@@ -997,6 +1450,7 @@ class NtfyClipboardApp(tk.Tk):
                 cwd=str(self.config_path.parent),
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
+                env=build_service_environment(),
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
         except Exception as exc:
@@ -1078,26 +1532,72 @@ class NtfyClipboardApp(tk.Tk):
         else:
             self.test_result_var.set(self._t("test.not_found"))
 
-    def _toggle_autostart(self) -> None:
+    def _startup_mode_labels(self) -> list[str]:
+        return [
+            self._t("startup.manual"),
+            self._t("startup.manager"),
+            self._t("startup.service"),
+        ]
+
+    def _startup_mode_label(self, mode: str) -> str:
+        key = {
+            "manager": "startup.manager",
+            "service": "startup.service",
+        }.get(mode, "startup.manual")
+        return self._t(key)
+
+    def _startup_mode_from_label(self, label: str) -> str:
+        if label == self._t("startup.service"):
+            return "service"
+        if label == self._t("startup.manager"):
+            return "manager"
+        return "manual"
+
+    def _startup_hint(self, mode: str) -> str:
+        key = {
+            "manager": "startup.hint_manager",
+            "service": "startup.hint_service",
+        }.get(mode, "startup.hint_manual")
+        return self._t(key)
+
+    def _on_startup_mode_change(self, event=None) -> None:
+        selected = self._startup_mode_from_label(self.startup_mode_var.get())
+        previous = self.startup_mode
+        if selected == "service" and previous != "service":
+            if not messagebox.askyesno(
+                self._t("dialog.silent_mode_title"),
+                self._t("dialog.silent_mode_body"),
+            ):
+                self.startup_mode_var.set(self._startup_mode_label(previous))
+                self.startup_hint_var.set(self._startup_hint(previous))
+                return
         try:
-            if self.autostart_var.get():
+            if selected == "manual":
+                disable_startup()
+            else:
                 self._save_settings()
                 command = build_startup_command(
                     frozen=is_frozen(),
                     executable=gui_executable(),
                     config_path=self.config_path,
+                    mode=selected,
                 )
                 enable_startup(command)
-                self.status_detail_var.set(self._t("status.autostart_on"))
-            else:
-                disable_startup()
-                self.status_detail_var.set(self._t("status.autostart_off"))
+            self.startup_mode = selected
+            self.startup_hint_var.set(self._startup_hint(selected))
+            self.status_detail_var.set(self._t(f"status.startup_{selected}"))
+            if selected == "service":
+                if not self._service_pid():
+                    self._start_service()
+                if self._service_pid():
+                    self.after(100, self._exit_app)
         except Exception as exc:
-            self.autostart_var.set(not self.autostart_var.get())
+            self.startup_mode_var.set(self._startup_mode_label(previous))
+            self.startup_hint_var.set(self._startup_hint(previous))
             messagebox.showerror(self._t("dialog.autostart_error"), str(exc))
 
     def _open_log(self) -> None:
-        log_path = self.config_path.parent / "logs" / "ntfy-clipboard.log"
+        log_path = self.config_path.parent / "logs" / "sms2clip.log"
         if not log_path.exists():
             messagebox.showinfo(
                 self._t("dialog.no_log_title"), self._t("dialog.no_log_body")
@@ -1244,11 +1744,11 @@ class NtfyClipboardApp(tk.Tk):
         ).pack(pady=(0, 18))
 
     def _auto_start_if_needed(self) -> None:
-        if self.config_path.exists() and not self._service_pid():
+        if not self._service_pid():
             self._start_service()
 
     def destroy(self) -> None:
-        for job in (self._status_job, self._log_job):
+        for job in (self._status_job, self._log_job, self._history_job):
             if job:
                 try:
                     self.after_cancel(job)
@@ -1256,6 +1756,7 @@ class NtfyClipboardApp(tk.Tk):
                     pass
         self._status_job = None
         self._log_job = None
+        self._history_job = None
         super().destroy()
 
     def _on_close(self) -> None:
@@ -1270,9 +1771,27 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", default=str(default_config_path()))
     parser.add_argument("--minimized", action="store_true")
     args = parser.parse_args(argv)
+
+    instance = ManagerInstance()
+    if instance.already_running:
+        instance.signal_existing()
+        instance.close()
+        return 0
+
     _set_dpi_awareness()
-    app = NtfyClipboardApp(Path(args.config), minimized=args.minimized)
-    app.mainloop()
+    app = SMS2ClipApp(Path(args.config), minimized=args.minimized)
+
+    def activate_existing() -> None:
+        try:
+            app.after(0, app._show_window)
+        except Exception:
+            pass
+
+    instance.wait_for_activation(activate_existing)
+    try:
+        app.mainloop()
+    finally:
+        instance.close()
     return 0
 
 

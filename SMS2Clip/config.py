@@ -1,4 +1,4 @@
-"""Configuration loading for the ntfy clipboard bridge."""
+"""Configuration loading for the SMS2Clip bridge."""
 
 from __future__ import annotations
 
@@ -25,6 +25,7 @@ class Config:
     reconnect_min_seconds: float
     reconnect_max_seconds: float
     language: str = "zh-CN"
+    auto_copy_code: bool = True
 
     @classmethod
     def load(cls, path: str | Path) -> "Config":
@@ -45,13 +46,24 @@ class Config:
         password = payload.get("password") or None
 
         state_value = Path(str(payload.get("state_file", "state.json")))
-        log_value = Path(str(payload.get("log_file", "logs/ntfy-clipboard.log")))
+        log_value = Path(str(payload.get("log_file", "logs/sms2clip.log")))
         state_file = state_value if state_value.is_absolute() else base / state_value
         log_file = log_value if log_value.is_absolute() else base / log_value
 
         gap = int(payload.get("clipboard_gap_ms", 350))
         if gap < 0:
             raise ValueError("clipboard_gap_ms must be zero or greater")
+
+        auto_copy_code = payload.get("auto_copy_code", True)
+        if isinstance(auto_copy_code, str):
+            auto_copy_code = auto_copy_code.strip().lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }
+        else:
+            auto_copy_code = bool(auto_copy_code)
 
         reconnect_min = float(payload.get("reconnect_min_seconds", 1))
         reconnect_max = float(payload.get("reconnect_max_seconds", 60))
@@ -71,6 +83,7 @@ class Config:
             reconnect_min_seconds=reconnect_min,
             reconnect_max_seconds=reconnect_max,
             language=normalize_language(str(payload.get("language", "zh-CN"))),
+            auto_copy_code=auto_copy_code,
         )
 
     def save(self, path: str | Path) -> None:
@@ -97,6 +110,7 @@ class Config:
             "reconnect_min_seconds": self.reconnect_min_seconds,
             "reconnect_max_seconds": self.reconnect_max_seconds,
             "language": self.language,
+            "auto_copy_code": self.auto_copy_code,
         }
         config_path.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2) + "\n",

@@ -2,7 +2,7 @@ import json
 import unittest
 from urllib.parse import parse_qs, urlparse
 
-from ntfy_clipboard.ntfy_client import publish_message
+from SMS2Clip.ntfy_client import publish_message
 
 
 class PublishMessageTests(unittest.TestCase):

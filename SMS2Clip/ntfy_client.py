@@ -94,7 +94,7 @@ class NtfySubscriber:
 
     def iter_messages(self) -> Iterator[NtfyMessage]:
         headers = {
-            "User-Agent": "ntfy-clipboard/0.3.0",
+            "User-Agent": "sms2clip/0.4.0",
             "Accept": "application/x-ndjson",
         }
         headers.update(_auth_headers(self.token, self.username, self.password))
@@ -121,7 +121,7 @@ def publish_message(
     opener: Callable[..., object] = urlopen,
 ) -> str:
     headers = {
-        "User-Agent": "ntfy-clipboard/0.3.0",
+        "User-Agent": "sms2clip/0.4.0",
         "Content-Type": "text/plain; charset=utf-8",
     }
     headers.update(_auth_headers(token, username, password))

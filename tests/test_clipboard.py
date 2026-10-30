@@ -1,6 +1,6 @@
 import unittest
 
-from ntfy_clipboard.clipboard import ClipboardWriter
+from SMS2Clip.clipboard import ClipboardWriter
 
 
 class ClipboardWriterTests(unittest.TestCase):

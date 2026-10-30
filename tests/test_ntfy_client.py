@@ -3,7 +3,7 @@ import json
 import unittest
 from urllib.parse import parse_qs, urlparse
 
-from ntfy_clipboard.ntfy_client import (
+from SMS2Clip.ntfy_client import (
     NtfySubscriber,
     build_subscribe_url,
     parse_message,

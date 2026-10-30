@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from ntfy_clipboard.config import Config
+from SMS2Clip.config import Config
 
 
 class ConfigSaveTests(unittest.TestCase):
@@ -29,6 +29,7 @@ class ConfigSaveTests(unittest.TestCase):
             payload = json.loads(path.read_text(encoding="utf-8"))
             self.assertEqual(payload["topic"], "my-topic")
             self.assertEqual(payload["clipboard_gap_ms"], 500)
+            self.assertTrue(payload["auto_copy_code"])
             self.assertEqual(payload["state_file"], "state.json")
             self.assertEqual(payload["log_file"], str(Path("logs") / "app.log"))
             self.assertEqual(payload["language"], "zh-CN")
@@ -59,6 +60,27 @@ class ConfigSaveTests(unittest.TestCase):
             path = base / "config.json"
             config.save(path)
             self.assertEqual(Config.load(path).language, "en")
+
+    def test_auto_copy_setting_round_trips(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            config = Config(
+                server="https://ntfy.sh",
+                topic="my-topic",
+                token=None,
+                username=None,
+                password=None,
+                since="",
+                clipboard_gap_ms=350,
+                state_file=base / "state.json",
+                log_file=base / "logs" / "app.log",
+                reconnect_min_seconds=1,
+                reconnect_max_seconds=30,
+                auto_copy_code=False,
+            )
+            path = base / "config.json"
+            config.save(path)
+            self.assertFalse(Config.load(path).auto_copy_code)
 
 
 if __name__ == "__main__":

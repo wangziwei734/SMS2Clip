@@ -6,6 +6,8 @@ venv/
 config.json
 state.json
 state.json.tmp
+history.json
+history.json.tmp
 logs/
 *.log
 .ruff_cache/
@@ -13,5 +15,5 @@ logs/
 build/
 dist/
 *.spec
-NtfyClipboard.exe
+SMS2Clip.exe
 gui-preview*.png

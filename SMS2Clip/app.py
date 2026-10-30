@@ -21,11 +21,15 @@ class ClipboardApp:
         state,
         logger: logging.Logger | None = None,
         notifier=None,
+        auto_copy_code: bool = True,
+        history=None,
     ) -> None:
         self.writer = writer
         self.state = state
         self.logger = logger or logging.getLogger(__name__)
         self.notifier = notifier
+        self.auto_copy_code = auto_copy_code
+        self.history = history
 
     def handle_message(self, message: NtfyMessage) -> bool:
         if message.id and self.state.last_id == message.id:
@@ -34,7 +38,14 @@ class ClipboardApp:
 
         full_text = compose_full_message(message)
         code = extract_verification_code(full_text)
-        self.writer.copy_full_then_code(full_text, code)
+        if self.history is not None:
+            try:
+                self.history.add(full_text, code, message.id)
+            except Exception:
+                self.logger.exception("Could not save message history")
+        self.writer.copy_full_then_code(
+            full_text, code if self.auto_copy_code else None
+        )
 
         if self.notifier is not None:
             try:

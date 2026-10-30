@@ -11,7 +11,7 @@ try {
     & $python.Source -m unittest discover -s (Join-Path $PSScriptRoot "tests") -v
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-    & $python.Source -m ntfy_clipboard --config $ConfigPath --check
+    & $python.Source -m SMS2Clip --config $ConfigPath --check
 } finally {
     Pop-Location
 }

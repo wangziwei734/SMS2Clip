@@ -3,6 +3,8 @@ param(
     [string]$Topic = "",
     [string]$Server = "https://ntfy.sh",
     [switch]$InstallStartup,
+    [ValidateSet("Manager", "Service")]
+    [string]$StartupMode = "Manager",
     [switch]$Force
 )
 
@@ -29,10 +31,11 @@ $config = [ordered]@{
     since = ""
     clipboard_gap_ms = 350
     state_file = "state.json"
-    log_file = "logs/ntfy-clipboard.log"
+    log_file = "logs/sms2clip.log"
     reconnect_min_seconds = 1
     reconnect_max_seconds = 60
     language = "zh-CN"
+    auto_copy_code = $true
 }
 
 $json = $config | ConvertTo-Json
@@ -45,12 +48,12 @@ Write-Host "Publish URL: $($config.server)/$Topic"
 Push-Location $root
 try {
     $python = Get-Command python -ErrorAction Stop
-    & $python.Source -m ntfy_clipboard --config $configPath --check
+    & $python.Source -m SMS2Clip --config $configPath --check
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 } finally {
     Pop-Location
 }
 
 if ($InstallStartup) {
-    & (Join-Path $root "install-startup.ps1") -ConfigPath $configPath
+    & (Join-Path $root "install-startup.ps1") -ConfigPath $configPath -Mode $StartupMode
 }

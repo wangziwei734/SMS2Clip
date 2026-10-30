@@ -6,6 +6,7 @@ import ctypes
 import os
 import subprocess
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 
 
@@ -19,15 +20,30 @@ def build_service_command(
     return [
         str(executable),
         "-m",
-        "ntfy_clipboard",
+        "SMS2Clip",
         "--service",
         "--config",
         str(config_path),
     ]
 
 
+def build_service_environment(
+    environment: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    cleaned = dict(os.environ if environment is None else environment)
+    for name in (
+        "_MEIPASS2",
+        "_PYI_APPLICATION_HOME_DIR",
+        "_PYI_ARCHIVE_FILE",
+        "_PYI_PARENT_PROCESS_LEVEL",
+        "_PYI_SPLASH_IPC",
+    ):
+        cleaned.pop(name, None)
+    return cleaned
+
+
 def pid_file_path(config_path: Path) -> Path:
-    return config_path.parent / "ntfy-clipboard.pid"
+    return config_path.parent / "sms2clip.pid"
 
 
 def read_pid(path: Path) -> int | None:

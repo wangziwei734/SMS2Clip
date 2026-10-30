@@ -7,11 +7,11 @@ import sys
 
 def main() -> int:
     if "--service" in sys.argv:
-        from ntfy_clipboard.__main__ import main as cli_main
+        from SMS2Clip.__main__ import main as cli_main
 
         return cli_main(sys.argv[1:])
 
-    from ntfy_clipboard.gui import main as gui_main
+    from SMS2Clip.gui import main as gui_main
 
     return gui_main(sys.argv[1:])
 

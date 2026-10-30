@@ -5,9 +5,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from ntfy_clipboard.config import Config
-from ntfy_clipboard.ntfy_client import NtfyMessage
-from ntfy_clipboard.service import run_service
+from SMS2Clip.config import Config
+from SMS2Clip.ntfy_client import NtfyMessage
+from SMS2Clip.service import run_service
 
 
 class FakeWriter:
@@ -55,6 +55,7 @@ class ServiceTests(unittest.TestCase):
                 log_file=base / "log.txt",
                 reconnect_min_seconds=1,
                 reconnect_max_seconds=60,
+                auto_copy_code=False,
             )
             writer = FakeWriter()
             notifier = FakeNotifier()
@@ -66,7 +67,7 @@ class ServiceTests(unittest.TestCase):
                 message="验证码为 482913",
             )
 
-            with patch("ntfy_clipboard.service.ClipboardWriter", return_value=writer):
+            with patch("SMS2Clip.service.ClipboardWriter", return_value=writer):
                 run_service(
                     config,
                     logging.getLogger("test-service"),
@@ -74,11 +75,14 @@ class ServiceTests(unittest.TestCase):
                     notifier_factory=lambda: notifier,
                 )
 
-            self.assertEqual(writer.calls, [("短信\n验证码为 482913", "482913")])
+            self.assertEqual(writer.calls, [("短信\n验证码为 482913", None)])
             self.assertEqual(notifier.messages, [("短信\n验证码为 482913", "482913")])
             self.assertTrue(notifier.closed)
             saved = json.loads((base / "state.json").read_text(encoding="utf-8"))
             self.assertEqual(saved["last_id"], "msg-1")
+            history = json.loads((base / "history.json").read_text(encoding="utf-8"))
+            self.assertEqual(history[0]["text"], "短信\n验证码为 482913")
+            self.assertEqual(history[0]["code"], "482913")
 
 
 if __name__ == "__main__":

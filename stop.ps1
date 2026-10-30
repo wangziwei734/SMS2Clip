@@ -6,8 +6,8 @@ param(
 $ErrorActionPreference = "Stop"
 $configPath = [System.IO.Path]::GetFullPath($ConfigPath)
 $configDir = Split-Path -Parent $configPath
-$guiPidPath = Join-Path $configDir "ntfy-clipboard-gui.pid"
-$servicePidPath = Join-Path $configDir "ntfy-clipboard.pid"
+$guiPidPath = Join-Path $configDir "sms2clip-gui.pid"
+$servicePidPath = Join-Path $configDir "sms2clip.pid"
 
 foreach ($pidPath in @($guiPidPath, $servicePidPath)) {
     if (-not (Test-Path -LiteralPath $pidPath)) { continue }

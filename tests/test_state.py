@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from ntfy_clipboard.state import StateStore
+from SMS2Clip.state import StateStore
 
 
 class StateStoreTests(unittest.TestCase):
