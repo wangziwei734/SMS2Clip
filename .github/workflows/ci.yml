@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-package:
+    runs-on: windows-latest
+    env:
+      PYTHONUTF8: "1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -e ".[dev]"
+
+      - name: Lint
+        run: ruff check SMS2Clip tests
+
+      - name: Check formatting
+        run: ruff format --check SMS2Clip tests
+
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Build single-file executable
+        run: .\build.ps1
+
+      - name: Upload packaged executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: SMS2Clip-windows-x64
+          path: SMS2Clip.exe
+          if-no-files-found: error

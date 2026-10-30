@@ -6,12 +6,44 @@ build-backend = "setuptools.build_meta"
 name = "sms2clip"
 version = "0.4.0"
 description = "Forward iPhone SMS through ntfy and copy verification codes to the Windows clipboard"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "wangziwei734" }]
+keywords = ["iphone", "sms", "ntfy", "clipboard", "verification-code", "windows", "otp"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Win32 (MS Windows)",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: Chinese (Simplified)",
+    "Natural Language :: English",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Communications",
+    "Topic :: Utilities",
+]
 requires-python = ">=3.10"
 dependencies = ["pystray>=0.19.5", "Pillow>=10,<13", "qrcode>=7.4", "windows-toasts>=1.3.1", "pywin32>=306; sys_platform == 'win32'"]
+
+[project.optional-dependencies]
+dev = ["ruff>=0.12,<0.13"]
 
 [project.scripts]
 sms2clip = "SMS2Clip.__main__:main"
 sms2clip-gui = "SMS2Clip.entry:main"
 
+[project.urls]
+Homepage = "https://github.com/wangziwei734/SMS2Clip"
+Repository = "https://github.com/wangziwei734/SMS2Clip"
+Releases = "https://github.com/wangziwei734/SMS2Clip/releases"
+Issues = "https://github.com/wangziwei734/SMS2Clip/issues"
+
 [tool.setuptools]
 packages = ["SMS2Clip"]
+
+[tool.ruff]
+target-version = "py310"

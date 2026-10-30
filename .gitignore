@@ -17,3 +17,9 @@ dist/
 *.spec
 SMS2Clip.exe
 gui-preview*.png
+*.egg-info/
+.coverage
+htmlcov/
+.mypy_cache/
+.idea/
+.vscode/

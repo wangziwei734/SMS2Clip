@@ -1,8 +1,12 @@
 # SMS2Clip
 
+[![CI](https://github.com/wangziwei734/SMS2Clip/actions/workflows/ci.yml/badge.svg)](https://github.com/wangziwei734/SMS2Clip/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/wangziwei734/SMS2Clip?label=release)](https://github.com/wangziwei734/SMS2Clip/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 **iPhone 短信 → ntfy → Windows 验证码剪贴板**
 
-[English README](README.md)
+[English README](README.md) · **[下载最新版本](https://github.com/wangziwei734/SMS2Clip/releases/latest)**
 
 > **致谢与二次开发说明：** 本项目基于 [ntfy](https://github.com/binwiederhier/ntfy) 进行二次开发，并使用在 **谢週五** 原创并公开分享的 iPhone 快捷指令基础上适配的版本。详见 [CREDITS.md](CREDITS.md)。
 
@@ -56,20 +60,17 @@ https://www.icloud.com/shortcuts/2e72a660dec84fd9b8c7abd92d42043f
 
 ### 1. 获取软件
 
-在项目目录执行：
+从 [GitHub Releases](https://github.com/wangziwei734/SMS2Clip/releases/latest) 下载 `SMS2Clip-<版本>-windows-x64.exe`。
+
+如果要从源码构建：
 
 ```powershell
-cd D:\CodePlayground\Python\SMS2Clip
+git clone https://github.com/wangziwei734/SMS2Clip.git
+cd SMS2Clip
 .\build.ps1
 ```
 
-生成：
-
-```text
-D:\CodePlayground\Python\SMS2Clip\SMS2Clip.exe
-```
-
-发布到 GitHub 时，可以把 `SMS2Clip.exe` 作为 Release 附件上传；仓库默认不提交这个二进制文件。
+打包结果位于 `dist\SMS2Clip.exe`，同时会复制到仓库根目录的 `SMS2Clip.exe`。二进制文件不会提交到 Git，而是通过 Releases 分发。
 
 ### 2. 启动软件
 
@@ -296,6 +297,14 @@ python -m SMS2Clip --config .\config.json --service
 
 完整说明见 [CREDITS.md](CREDITS.md)。如署名或来源描述有误、遗漏，请提交 Issue，我们会及时更正。
 
+## 贡献与安全
+
+开发和提交 Pull Request 前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)，版本变化见 [CHANGELOG.md](CHANGELOG.md)。安全问题请按照 [SECURITY.md](SECURITY.md) 私下报告，不要创建公开 Issue。
+
+## 许可证
+
+SMS2Clip 源代码使用 [MIT License](LICENSE)。第三方依赖和引用项目仍遵循各自的许可证。
+
 ## 项目结构
 
 ```text
@@ -318,6 +327,9 @@ SMS2Clip/
 tests/              单元测试与 GUI 冒烟测试
 assets/             应用图标和托盘图标
 docs/               脱敏后的界面截图
+.github/            CI、Dependabot 和贡献模板
 build.ps1           构建单文件 exe
 config.example.json 配置模板
+LICENSE             MIT 许可证
+CHANGELOG.md        版本历史
 ```

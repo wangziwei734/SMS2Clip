@@ -1,8 +1,12 @@
 # SMS2Clip
 
+[![CI](https://github.com/wangziwei734/SMS2Clip/actions/workflows/ci.yml/badge.svg)](https://github.com/wangziwei734/SMS2Clip/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/wangziwei734/SMS2Clip?label=release)](https://github.com/wangziwei734/SMS2Clip/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 **iPhone SMS → ntfy → Windows verification-code clipboard**
 
-[中文说明](README.zh-CN.md)
+[中文说明](README.zh-CN.md) · **[Download latest release](https://github.com/wangziwei734/SMS2Clip/releases/latest)**
 
 > **Attribution:** This is an unofficial secondary development built on [ntfy](https://github.com/binwiederhier/ntfy). It also uses an iPhone Shortcut adapted from the original created and shared by **谢週五**. See [Credits and attribution](CREDITS.md).
 
@@ -59,20 +63,17 @@ The Shortcut posts JSON to ntfy. It is a project-specific adaptation of the publ
 
 ### 1. Get the executable
 
-Build it locally:
+Download `SMS2Clip-<version>-windows-x64.exe` from [GitHub Releases](https://github.com/wangziwei734/SMS2Clip/releases/latest).
+
+To build locally instead:
 
 ```powershell
-cd D:\CodePlayground\Python\SMS2Clip
+git clone https://github.com/wangziwei734/SMS2Clip.git
+cd SMS2Clip
 .\build.ps1
 ```
 
-The output is:
-
-```text
-D:\CodePlayground\Python\SMS2Clip\SMS2Clip.exe
-```
-
-You can upload that file as a GitHub Release asset. The executable is intentionally ignored by Git so the repository does not carry a large binary.
+The packaged executable is written to `dist\SMS2Clip.exe` and copied to `SMS2Clip.exe` in the repository root. The binary is intentionally ignored by Git and distributed through Releases.
 
 ### 2. Start the app
 
@@ -332,6 +333,14 @@ python -m SMS2Clip --config .\config.json --service
 
 Full attribution: [CREDITS.md](CREDITS.md). If any attribution is inaccurate or incomplete, please open an issue so it can be corrected.
 
+## Contributing and security
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development and pull-request guidance, and [CHANGELOG.md](CHANGELOG.md) for release history. Report vulnerabilities privately through [SECURITY.md](SECURITY.md), not in a public issue.
+
+## License
+
+SMS2Clip source code is released under the [MIT License](LICENSE). Third-party dependencies and referenced projects remain under their respective licenses.
+
 ## Project layout
 
 ```text
@@ -354,6 +363,9 @@ SMS2Clip/
 tests/              Unit and GUI smoke tests
 assets/             App icon and tray image
 docs/               Sanitized screenshots
+.github/            CI, Dependabot, and contribution templates
 build.ps1           Build the single-file executable
 config.example.json Configuration template
+LICENSE             MIT license
+CHANGELOG.md        Release history
 ```

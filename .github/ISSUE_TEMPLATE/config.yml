@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Download the latest release
+    url: https://github.com/wangziwei734/SMS2Clip/releases/latest
+    about: Download the current Windows executable
+  - name: Report a security vulnerability
+    url: https://github.com/wangziwei734/SMS2Clip/security/advisories/new
+    about: Report security issues privately
